@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RNN Eigenspace Explorer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #080c10;
+    --surface: #0d1520;
+    --surface2: #111d2e;
+    --border: #1e3050;
+    --accent: #00e5a0;
+    --accent2: #00aaff;
+    --accent3: #ff6b6b;
+    --accent4: #ffd166;
+    --text: #c8d8e8;
+    --text-dim: #506070;
+    --text-bright: #eaf4ff;
+    --glow: rgba(0,229,160,0.15);
+    --glow2: rgba(0,170,255,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* grid bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .shell {
+    position: relative; z-index: 1;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  header {
+    display: flex; align-items: baseline; gap: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px; margin-bottom: 24px;
+  }
+  header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px; font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  header .sub {
+    font-size: 12px; color: var(--text-dim);
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase; letter-spacing: 2px;
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: auto auto;
+    gap: 16px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .panel-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* ─── ADJACENCY MATRIX ─── */
+  #adj-panel { grid-row: 1 / 2; grid-column: 1 / 2; }
+
+  .matrix-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .matrix-table {
+    border-collapse: collapse;
+  }
+  .matrix-table th {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+    padding: 4px 8px; text-align: center;
+  }
+  .matrix-table th.row-label { color: var(--accent); padding-right: 10px; }
+  .matrix-table td {
+    padding: 4px;
+  }
+  .cell-btn {
+    width: 52px; height: 52px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
+    font-family: 'Space Mono', monospace;
+    font-size: 20px; font-weight: 700;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .cell-btn.diagonal {
+    border-color: #3a2a50;
+    background: #120a1e;
+    font-size: 20px;
+  }
+  .cell-btn.diagonal.active {
+    border-color: #cc88ff;
+    background: rgba(180,80,255,0.12);
+    color: #cc88ff;
+    box-shadow: 0 0 12px rgba(180,80,255,0.25), inset 0 0 8px rgba(180,80,255,0.05);
+  }
+  .cell-btn.diagonal:not(.active) {
+    color: #3a2a50;
+  }
+  .cell-btn.active {
+    border-color: var(--accent);
+    background: rgba(0,229,160,0.12);
+    color: var(--accent);
+    box-shadow: 0 0 12px rgba(0,229,160,0.25), inset 0 0 8px rgba(0,229,160,0.05);
+  }
+  .cell-btn:not(.diagonal):not(.active):not(.inhibitory):hover {
+    border-color: #3a5070;
+    background: #151f2e;
+    color: var(--text);
+  }
+  .cell-btn.inhibitory {
+    border-color: var(--accent3);
+    background: rgba(255,107,107,0.12);
+    color: var(--accent3);
+    box-shadow: 0 0 12px rgba(255,107,107,0.25), inset 0 0 8px rgba(255,107,107,0.05);
+  }
+  .cell-btn .weight-display {
+    font-size: 11px;
+    position: absolute; bottom: 4px;
+    color: inherit; opacity: 0.75;
+  }
+
+  /* ─── GAIN ─── */
+  .gain-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .gain-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+    white-space: nowrap;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1; height: 4px;
+    background: var(--border);
+    border-radius: 4px; outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    cursor: pointer;
+  }
+  .gain-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px; color: var(--accent);
+    min-width: 38px; text-align: right;
+  }
+
+  /* ─── NETWORK VIZ ─── */
+  #net-panel { grid-row: 1 / 2; grid-column: 2 / 3; }
+
+  #net-canvas-wrap {
+    position: relative;
+    height: 260px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #netCanvas { border-radius: 6px; }
+
+  /* ─── DYNAMICS ─── */
+  #dyn-panel {
+    grid-row: 2 / 3; grid-column: 1 / 2;
+  }
+  .dyn-controls {
+    display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary {
+    border-color: var(--accent); color: var(--accent);
+    background: rgba(0,229,160,0.08);
+  }
+  .btn.danger { border-color: var(--accent3); color: var(--accent3); }
+  .btn.sigmoid-on {
+    border-color: #cc88ff; color: #cc88ff;
+    background: rgba(180,80,255,0.10);
+    box-shadow: 0 0 8px rgba(180,80,255,0.2);
+  }
+
+  #dynCanvas { width: 100%; border-radius: 4px; }
+
+  /* ─── EIGENSPACE ─── */
+  #eigen-panel {
+    grid-row: 2 / 3; grid-column: 2 / 3;
+  }
+
+  .eigen-layout {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 12px;
+  }
+
+  #eigenCanvas { border-radius: 6px; width: 100%; }
+
+  .eigen-table-wrap {
+    overflow: auto;
+  }
+  .etable {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+  }
+  .etable th {
+    color: var(--text-dim);
+    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .etable td {
+    padding: 5px 6px;
+    border-bottom: 1px solid rgba(30,48,80,0.5);
+    white-space: nowrap;
+  }
+  .etable tr:hover td { background: rgba(255,255,255,0.02); }
+  .ev-re { color: var(--accent2); }
+  .ev-im { color: var(--accent4); }
+  .ev-label {
+    display: inline-block;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    text-align: center; line-height: 18px;
+    font-size: 9px; font-weight: 700;
+    margin-right: 2px;
+  }
+
+  .stability-tag {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 20px;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px; letter-spacing: 1px;
+    margin-top: 4px;
+  }
+  .stable { background: rgba(0,229,160,0.12); color: var(--accent); border: 1px solid rgba(0,229,160,0.3); }
+  .unstable { background: rgba(255,107,107,0.12); color: var(--accent3); border: 1px solid rgba(255,107,107,0.3); }
+  .marginal { background: rgba(255,209,102,0.12); color: var(--accent4); border: 1px solid rgba(255,209,102,0.3); }
+
+  .vec-label { color: var(--text-dim); font-size: 9px; }
+
+  .ic-row {
+    display: flex; gap: 8px; margin-bottom: 10px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .ic-row .btn { font-size: 9px; padding: 4px 10px; }
+  .ic-label { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
+  #ic-display {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+
+  /* tau control */
+  .tau-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .tau-row .gain-label { min-width: 90px; }
+
+  /* mode toggle */
+  .mode-btn { flex: 1; }
+  .mode-btn.active-mode {
+    border-color: var(--accent2); color: var(--accent2);
+    background: rgba(0,170,255,0.12);
+    box-shadow: 0 0 8px rgba(0,170,255,0.2);
+  }
+  .btn.running { background: rgba(0,229,160,0.15); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <h1>RNN Eigenspace Explorer</h1>
+    <span class="sub">Computational Neuroscience · Discrete &amp; Continuous Dynamics</span>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- ADJACENCY + CONTROLS -->
+    <div class="panel" id="adj-panel">
+      <div class="panel-title">Connectivity Matrix W</div>
+      <div class="matrix-wrap">
+        <table class="matrix-table" id="adj-table">
+          <thead><tr><th></th><th>→N₁</th><th>→N₂</th><th>→N₃</th></tr></thead>
+          <tbody id="adj-body"></tbody>
+        </table>
+      </div>
+
+      <!-- MODE TOGGLE -->
+      <div class="gain-row" style="justify-content:center;gap:6px;padding-top:12px;">
+        <button class="btn mode-btn active-mode" id="mode-disc" onclick="setMode('discrete')">Discrete</button>
+        <button class="btn mode-btn" id="mode-cont" onclick="setMode('continuous')">Continuous</button>
+      </div>
+
+      <!-- gain (shared) -->
+      <div class="tau-row" style="margin-top:8px;">
+        <span class="gain-label" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);min-width:72px;">Gain g</span>
+        <input type="range" id="gain-slider" min="0.1" max="5.0" step="0.05" value="2.0" style="flex:1;height:4px;background:var(--border);border-radius:4px;outline:none;cursor:pointer;">
+        <span class="gain-val" id="gain-val">2.00</span>
+      </div>
+
+      <!-- DISCRETE: λ -->
+      <div class="tau-row" id="row-lam">
+        <span class="gain-label" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);min-width:72px;">Update λ</span>
+        <input type="range" id="lam-slider" min="0.01" max="1.0" step="0.01" value="1.0" style="flex:1;height:4px;background:var(--border);border-radius:4px;outline:none;cursor:pointer;">
+        <span class="gain-val" id="lam-val">1.00</span>
+      </div>
+
+      <!-- CONTINUOUS: α, τ (hidden by default) -->
+      <div class="tau-row" id="row-alpha" style="display:none;">
+        <span class="gain-label" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);min-width:72px;">Leak α</span>
+        <input type="range" id="alpha-slider" min="0.01" max="3.0" step="0.01" value="0.1" style="flex:1;height:4px;background:var(--border);border-radius:4px;outline:none;cursor:pointer;">
+        <span class="gain-val" id="alpha-val">0.10</span>
+      </div>
+      <div class="tau-row" id="row-tau" style="display:none;">
+        <span class="gain-label" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);min-width:72px;">Time τ</span>
+        <input type="range" id="tau-slider" min="0.05" max="5.0" step="0.05" value="1.0" style="flex:1;height:4px;background:var(--border);border-radius:4px;outline:none;cursor:pointer;">
+        <span class="gain-val" id="tau-val">1.00</span>
+      </div>
+
+      <!-- speed (shared) -->
+      <div class="tau-row">
+        <span class="gain-label" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);min-width:72px;">Speed</span>
+        <input type="range" id="speed-slider" min="1" max="40" step="1" value="6" style="flex:1;height:4px;background:var(--border);border-radius:4px;outline:none;cursor:pointer;">
+        <span class="gain-val" id="speed-val">6</span>
+      </div>
+    </div>
+
+    <!-- NETWORK VIZ -->
+    <div class="panel" id="net-panel">
+      <div class="panel-title" id="net-title">Network Topology · discrete · forward ring</div>
+      <div id="net-canvas-wrap">
+        <canvas id="netCanvas" width="520" height="250"></canvas>
+      </div>
+    </div>
+
+    <!-- DYNAMICS -->
+    <div class="panel" id="dyn-panel">
+      <div class="panel-title" id="dyn-eq-label">r[t+1] = (1−λ)·r[t] + λ·tanh(g·W·r[t])</div>
+      <div class="ic-row">
+        <span class="ic-label">r₀ =</span>
+        <span id="ic-display">[1.00, 0.00, 0.00]</span>
+        <button class="btn" onclick="setIC100()">[1,0,0]</button>
+        <button class="btn" onclick="randomIC()">⟳ Random</button>
+      </div>
+      <div class="dyn-controls">
+        <button class="btn primary" id="run-btn" onclick="toggleRun()">▶ Run</button>
+        <button class="btn" onclick="resetSim()">↺ Reset</button>
+        <button class="btn sigmoid-on" id="nl-btn" onclick="toggleNL()">φ tanh</button>
+      </div>
+      <canvas id="dynCanvas" height="160"></canvas>
+    </div>
+
+    <!-- EIGENSPACE -->
+    <div class="panel" id="eigen-panel">
+      <div class="panel-title" id="eigen-title">Eigenspace · discrete: |λ| vs 1</div>
+      <div class="eigen-layout">
+        <div><canvas id="eigenCanvas" height="220"></canvas></div>
+        <div class="eigen-table-wrap">
+          <table class="etable">
+            <thead><tr><th>#</th><th>Re(λ)</th><th>Im(λ)</th><th id="th-mag">|λ|</th></tr></thead>
+            <tbody id="eigen-tbody"></tbody>
+          </table>
+          <div id="stability-wrap" style="margin-top:10px;"></div>
+          <div style="margin-top:14px;">
+            <div class="panel-title" style="margin-bottom:8px;">Eigenvectors</div>
+            <div id="evec-display" style="font-family:'Space Mono',monospace;font-size:10px;line-height:1.8;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════
+const N = 3;
+let W = [[0,0,0],[0,0,0],[0,0,0]];
+
+let gain  = 2.0;
+let useNL = true;            // true=tanh, false=linear
+let mode  = 'discrete';      // 'discrete' | 'continuous'
+let simSpeed = 6;
+
+// Discrete
+let lam   = 1.0;
+
+// Continuous
+let alpha = 0.1;
+let tau   = 1.0;
+const DT  = 0.05;
+
+let r  = [1.0, 0.0, 0.0];
+let r0 = [...r];
+let running    = false;
+let animId     = null;
+let simHistory = [];
+let simT       = 0;
+const HISTORY_LEN = 150;
+
+const EV_COLORS = ['#00e5a0','#00aaff','#ffd166'];
+
+// ══════════════════════════════════════════════════════════
+//  MODE SWITCHING
+// ══════════════════════════════════════════════════════════
+function setMode(m) {
+  mode = m;
+  const disc = m === 'discrete';
+  document.getElementById('mode-disc').classList.toggle('active-mode', disc);
+  document.getElementById('mode-cont').classList.toggle('active-mode', !disc);
+  document.getElementById('row-lam').style.display   = disc ? ''     : 'none';
+  document.getElementById('row-alpha').style.display = disc ? 'none' : '';
+  document.getElementById('row-tau').style.display   = disc ? 'none' : '';
+  // Swap default W on mode change
+  if (disc) {
+    // Forward ring for discrete
+    for(let i=0;i<N;i++) for(let j=0;j<N;j++) W[i][j]=0;
+    W[0][2]=1; W[1][0]=1; W[2][1]=1;
+  } else {
+    // Antisymmetric ring for continuous (purely imaginary eigs → damped oscillations)
+    for(let i=0;i<N;i++) for(let j=0;j<N;j++) W[i][j]=0;
+    W[0][2]=1; W[1][0]=1; W[2][1]=1;   // forward
+    W[0][1]=-1; W[1][2]=-1; W[2][0]=-1; // backward inhibit
+  }
+  buildAdjTable();
+  updateEquationLabel();
+  resetSim();
+  updateAll();
+}
+
+function updateEquationLabel() {
+  const lbl     = document.getElementById('dyn-eq-label');
+  const netLbl  = document.getElementById('net-title');
+  const eLbl    = document.getElementById('eigen-title');
+  const magLbl  = document.getElementById('th-mag');
+  if (mode === 'discrete') {
+    lbl.textContent   = useNL
+      ? 'r[t+1] = (1−λ)·r[t] + λ·tanh(g·W·r[t])'
+      : 'r[t+1] = (1−λ)·r[t] + λ·g·W·r[t]';
+    netLbl.textContent = 'Network Topology · discrete  (λ = update fraction / leak)';
+    eLbl.textContent   = 'Eigenspace · discrete: stability |λ| vs 1';
+    magLbl.textContent = '|λ|';
+  } else {
+    lbl.textContent   = useNL
+      ? 'ṙ = (−α·r + g·tanh(W·r)) / τ'
+      : 'ṙ = (−α·r + g·W·r) / τ';
+    netLbl.textContent = 'Network Topology · continuous  (α = leak / decay)';
+    eLbl.textContent   = 'Eigenspace · continuous: stability Re(λ) vs 0';
+    magLbl.textContent = '|λ|';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  ADJACENCY MATRIX UI
+// ══════════════════════════════════════════════════════════
+function buildAdjTable() {
+  const tbody = document.getElementById('adj-body');
+  tbody.innerHTML = '';
+  const labels = ['N₁','N₂','N₃'];
+  for (let i = 0; i < N; i++) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.className = 'row-label'; th.textContent = labels[i]+'→';
+    tr.appendChild(th);
+    for (let j = 0; j < N; j++) {
+      const td  = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className = 'cell-btn'+(i===j?' diagonal':'');
+      btn.id = `cell-${i}-${j}`;
+      btn.onclick = () => toggleCell(i, j);
+      setCellAppearance(btn, W[i][j]);
+      td.appendChild(btn); tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function setCellAppearance(btn, val) {
+  btn.textContent = val===0 ? '0' : (val>0 ? '+1' : '−1');
+  btn.classList.remove('active','inhibitory');
+  if (val>0) btn.classList.add('active');
+  if (val<0) btn.classList.add('inhibitory');
+}
+
+function toggleCell(i, j) {
+  W[i][j] = W[i][j]===0 ? 1 : (W[i][j]===1 ? -1 : 0);
+  updateAll();
+}
+
+function updateCellUI() {
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++)
+    setCellAppearance(document.getElementById(`cell-${i}-${j}`), W[i][j]);
+}
+
+// ══════════════════════════════════════════════════════════
+//  SLIDER LISTENERS
+// ══════════════════════════════════════════════════════════
+document.getElementById('gain-slider').addEventListener('input', function() {
+  gain = parseFloat(this.value);
+  document.getElementById('gain-val').textContent = gain.toFixed(2);
+  updateAll();
+});
+document.getElementById('lam-slider').addEventListener('input', function() {
+  lam = parseFloat(this.value);
+  document.getElementById('lam-val').textContent = lam.toFixed(2);
+  updateAll();
+});
+document.getElementById('alpha-slider').addEventListener('input', function() {
+  alpha = parseFloat(this.value);
+  document.getElementById('alpha-val').textContent = alpha.toFixed(2);
+  updateAll();
+});
+document.getElementById('tau-slider').addEventListener('input', function() {
+  tau = parseFloat(this.value);
+  document.getElementById('tau-val').textContent = tau.toFixed(2);
+  updateAll();
+});
+document.getElementById('speed-slider').addEventListener('input', function() {
+  simSpeed = parseInt(this.value);
+  document.getElementById('speed-val').textContent = simSpeed;
+});
+
+// ══════════════════════════════════════════════════════════
+//  NONLINEARITY TOGGLE
+// ══════════════════════════════════════════════════════════
+function toggleNL() {
+  useNL = !useNL;
+  const btn = document.getElementById('nl-btn');
+  btn.textContent = useNL ? 'φ tanh' : 'φ linear';
+  btn.classList.toggle('sigmoid-on', useNL);
+  updateEquationLabel();
+  updateAll();
+}
+
+// ══════════════════════════════════════════════════════════
+//  EFFECTIVE MATRIX FOR EIGENVALUES
+//  Discrete:    M = (1−λ)I + λ·g·W   (linearised map at origin)
+//  Continuous:  J = (−α·I + g·W) / τ  (Jacobian at origin)
+// ══════════════════════════════════════════════════════════
+function effectiveW() {
+  return Array.from({length:N}, (_,i) =>
+    Array.from({length:N}, (_,j) =>
+      mode==='discrete'
+        ? (i===j?(1-lam):0) + lam*gain*W[i][j]
+        : ((i===j?-alpha:0) + gain*W[i][j]) / tau
+    )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+//  EIGEN DECOMPOSITION  (analytical 3×3 characteristic polynomial)
+// ══════════════════════════════════════════════════════════
+function eigen3(M) {
+  const tr  = M[0][0]+M[1][1]+M[2][2];
+  const c1  = M[0][0]*M[1][1]-M[0][1]*M[1][0]
+            + M[0][0]*M[2][2]-M[0][2]*M[2][0]
+            + M[1][1]*M[2][2]-M[1][2]*M[2][1];
+  const det = M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
+             -M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
+             +M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+  const a2=-tr, a1=c1, a0=-det;
+  const p=a1-a2*a2/3, q=2*a2*a2*a2/27-a2*a1/3+a0;
+  const disc=-(4*p*p*p+27*q*q);
+  let roots;
+  if (disc>=0) {
+    const m=2*Math.sqrt(-p/3);
+    const theta=Math.acos(Math.max(-1,Math.min(1,3*q/(p*m))))/3, sh=-a2/3;
+    roots=[{re:m*Math.cos(theta)+sh,im:0},{re:m*Math.cos(theta-2*Math.PI/3)+sh,im:0},{re:m*Math.cos(theta-4*Math.PI/3)+sh,im:0}];
+  } else {
+    const S=Math.cbrt(-q/2+Math.sqrt(q*q/4+p*p*p/27)), T=Math.cbrt(-q/2-Math.sqrt(q*q/4+p*p*p/27));
+    roots=[{re:S+T-a2/3,im:0},{re:-(S+T)/2-a2/3,im:Math.sqrt(3)/2*Math.abs(S-T)},{re:-(S+T)/2-a2/3,im:-Math.sqrt(3)/2*Math.abs(S-T)}];
+  }
+  function mC(x,y){return{re:x.re*y.re-x.im*y.im,im:x.re*y.im+x.im*y.re};}
+  function sC(x,y){return{re:x.re-y.re,im:x.im-y.im};}
+  function crossC(a,b){return[sC(mC(a[1],b[2]),mC(a[2],b[1])),sC(mC(a[2],b[0]),mC(a[0],b[2])),sC(mC(a[0],b[1]),mC(a[1],b[0]))];}
+  const vectors=roots.map(lv=>{
+    const rows=Array.from({length:3},(_,i)=>Array.from({length:3},(_,j)=>({re:M[i][j]-(i===j?lv.re:0),im:i===j?-lv.im:0})));
+    const v=crossC(rows[0],rows[1]);
+    const norm=Math.sqrt(v.reduce((s,x)=>s+x.re*x.re+x.im*x.im,0))||1;
+    return v.map(x=>({re:x.re/norm,im:x.im/norm}));
+  });
+  return {values:roots,vectors};
+}
+
+// ══════════════════════════════════════════════════════════
+//  NETWORK CANVAS
+// ══════════════════════════════════════════════════════════
+function drawNetwork() {
+  const canvas=document.getElementById('netCanvas');
+  const ctx=canvas.getContext('2d'), CW=canvas.width, CH=canvas.height;
+  ctx.clearRect(0,0,CW,CH);
+  const cx=CW/2, cy=CH/2+10, R=Math.min(CW,CH)*0.32;
+  const angles=[-Math.PI/2,-Math.PI/2+2*Math.PI/3,-Math.PI/2+4*Math.PI/3];
+  const pos=angles.map(a=>({x:cx+R*Math.cos(a),y:cy+R*Math.sin(a)}));
+  const nodeR=24;
+
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++) {
+    if(!W[i][j]) continue;
+    const inh=W[i][j]<0, col=inh?'#ff6b6b':EV_COLORS[i];
+    if(i===j) drawSelfLoop(ctx,pos[i],nodeR,gain,col);
+    else       drawArrow(ctx,pos[i],pos[j],nodeR,gain,col,inh);
+  }
+
+  pos.forEach((p,i)=>{
+    const grad=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,nodeR*2.2);
+    grad.addColorStop(0,EV_COLORS[i]+'44'); grad.addColorStop(1,'transparent');
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(p.x,p.y,nodeR*2.2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x,p.y,nodeR,0,Math.PI*2);
+    ctx.fillStyle='#0d1a28'; ctx.fill(); ctx.strokeStyle=EV_COLORS[i]; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle=EV_COLORS[i]; ctx.font='bold 13px Space Mono,monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(['N₁','N₂','N₃'][i],p.x,p.y);
+    if(simHistory.length>0){
+      const v=simHistory[simHistory.length-1].r[i], c=Math.max(-1,Math.min(1,v));
+      ctx.beginPath(); ctx.arc(p.x,p.y+nodeR+10,5,0,Math.PI*2);
+      ctx.fillStyle=c>0?`rgba(0,229,160,${Math.abs(c)})`:`rgba(255,107,107,${Math.abs(c)})`; ctx.fill();
+    }
+  });
+}
+
+function drawSelfLoop(ctx,p,nodeR,gain,color){
+  const lx=p.x,ly=p.y-nodeR-2,loopR=nodeR*0.7,a=Math.min(1,0.4+gain*0.3);
+  ctx.strokeStyle=color+Math.round(a*255).toString(16).padStart(2,'0');
+  ctx.lineWidth=1.5+gain*0.4; ctx.shadowColor=color; ctx.shadowBlur=6;
+  ctx.beginPath(); ctx.arc(lx,ly-loopR,loopR,0.3,Math.PI*2-0.3); ctx.stroke(); ctx.shadowBlur=0;
+  const ex=lx+loopR*Math.sin(0.3),ey=ly-loopR+loopR*(1-Math.cos(0.3));
+  ctx.fillStyle=color; ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(ex-7,ey+4); ctx.lineTo(ex+1,ey+6); ctx.closePath(); ctx.fill();
+}
+
+function drawArrow(ctx,from,to,nodeR,gain,color,isInh=false){
+  const dx=to.x-from.x,dy=to.y-from.y,dist=Math.sqrt(dx*dx+dy*dy);
+  const bend=dist*0.35,mx=(from.x+to.x)/2,my=(from.y+to.y)/2;
+  const cpx=mx-dy/dist*bend,cpy=my+dx/dist*bend;
+  function bpt(t){const mt=1-t;return{x:mt*mt*from.x+2*mt*t*cpx+t*t*to.x,y:mt*mt*from.y+2*mt*t*cpy+t*t*to.y};}
+  let t0=0; for(let t=0;t<=1;t+=0.01){if(Math.hypot(bpt(t).x-from.x,bpt(t).y-from.y)>=nodeR){t0=t;break;}}
+  let t1=1; for(let t=1;t>=0;t-=0.01){if(Math.hypot(bpt(t).x-to.x,bpt(t).y-to.y)>=nodeR+8){t1=t;break;}}
+  const pS=bpt(t0),pE=bpt(t1),pB=bpt(Math.max(0,t1-0.01));
+  const ang=Math.atan2(pE.y-pB.y,pE.x-pB.x),al=Math.min(1,0.3+gain*0.3);
+  ctx.strokeStyle=color+Math.round(al*255).toString(16).padStart(2,'0');
+  ctx.lineWidth=1.5+gain*0.5; ctx.shadowColor=color; ctx.shadowBlur=6;
+  ctx.beginPath(); ctx.moveTo(pS.x,pS.y); ctx.quadraticCurveTo(cpx,cpy,pE.x,pE.y); ctx.stroke();
+  ctx.shadowBlur=0; ctx.fillStyle=color; ctx.strokeStyle=color;
+  if(isInh){
+    const px=-Math.sin(ang)*8,py=Math.cos(ang)*8; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(pE.x+px,pE.y+py); ctx.lineTo(pE.x-px,pE.y-py); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(pE.x,pE.y);
+    ctx.lineTo(pE.x-10*Math.cos(ang-0.35),pE.y-10*Math.sin(ang-0.35));
+    ctx.lineTo(pE.x-10*Math.cos(ang+0.35),pE.y-10*Math.sin(ang+0.35));
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  EIGENSPACE 3-D VIEWPORT
+// ══════════════════════════════════════════════════════════
+let eigenRotY=0,eigenRotX=0.4,dragging=false,lastMX=0,lastMY=0;
+
+function project3D(v,rx,ry){
+  let [x,y,z]=v,y2=y*Math.cos(rx)-z*Math.sin(rx),z2=y*Math.sin(rx)+z*Math.cos(rx);
+  let x3=x*Math.cos(ry)+z2*Math.sin(ry),z3=-x*Math.sin(ry)+z2*Math.cos(ry);
+  const s=4.5/(4.5+z3); return{x:x3*s,y:y2*s};
+}
+
+function drawEigenspace(res) {
+  const canvas=document.getElementById('eigenCanvas');
+  const ctx=canvas.getContext('2d'),CW=canvas.width,CH=canvas.height;
+  ctx.clearRect(0,0,CW,CH);
+  const cx=CW/2,cy=CH/2,sc=Math.min(CW,CH)*0.35;
+
+  // Reference: unit circle (discrete) in rotated plane
+  if(mode==='discrete'){
+    ctx.strokeStyle='rgba(255,209,102,0.2)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+    ctx.beginPath();
+    for(let a=0;a<=Math.PI*2+0.05;a+=0.05){
+      const p=project3D([Math.cos(a),Math.sin(a),0],eigenRotX,eigenRotY);
+      a<0.05?ctx.moveTo(cx+p.x*sc,cy-p.y*sc):ctx.lineTo(cx+p.x*sc,cy-p.y*sc);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  [[1,0,0],[0,1,0],[0,0,1]].forEach((a,i)=>{
+    const p0=project3D([0,0,0],eigenRotX,eigenRotY),p1=project3D(a,eigenRotX,eigenRotY);
+    ctx.strokeStyle='#1e3050'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(cx+p0.x*sc,cy-p0.y*sc); ctx.lineTo(cx+p1.x*sc,cy-p1.y*sc); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#2a4060'; ctx.font='10px Space Mono,monospace'; ctx.textAlign='center';
+    ctx.fillText(['r₁','r₂','r₃'][i],cx+(p1.x+0.04)*sc,cy-(p1.y+0.04)*sc);
+  });
+
+  if(!res) return;
+  res.vectors.forEach((v,i)=>{
+    const re=[v[0].re,v[1].re,v[2].re],norm=Math.sqrt(re.reduce((s,x)=>s+x*x,0))||1,n=re.map(x=>x/norm);
+    const p1=project3D(n,eigenRotX,eigenRotY),pm=project3D(n.map(x=>-x),eigenRotX,eigenRotY);
+    const p0=project3D([0,0,0],eigenRotX,eigenRotY);
+    ctx.strokeStyle=EV_COLORS[i]; ctx.lineWidth=2.5; ctx.shadowColor=EV_COLORS[i]; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.moveTo(cx+pm.x*sc,cy-pm.y*sc); ctx.lineTo(cx+p1.x*sc,cy-p1.y*sc); ctx.stroke();
+    ctx.shadowBlur=0;
+    const ang=Math.atan2(-(p1.y-p0.y)*sc,(p1.x-p0.x)*sc);
+    const ex=cx+p1.x*sc,ey=cy-p1.y*sc;
+    ctx.fillStyle=EV_COLORS[i]; ctx.beginPath();
+    ctx.moveTo(ex,ey); ctx.lineTo(ex-8*Math.cos(ang-0.35),ey-8*Math.sin(ang-0.35));
+    ctx.lineTo(ex-8*Math.cos(ang+0.35),ey-8*Math.sin(ang+0.35)); ctx.closePath(); ctx.fill();
+    ctx.font='bold 11px Space Mono,monospace'; ctx.textAlign='center';
+    ctx.fillText(`v${i+1}`,ex+10*Math.cos(ang),ey+10*Math.sin(ang));
+  });
+
+  if(r&&r.length===3){
+    const rm=Math.sqrt(r.reduce((s,x)=>s+x*x,0)),rn=rm>0.01?r.map(x=>x/rm*0.8):[0,0,0];
+    const pr=project3D(rn,eigenRotX,eigenRotY),p0=project3D([0,0,0],eigenRotX,eigenRotY);
+    ctx.strokeStyle='#ffffff66'; ctx.lineWidth=2; ctx.setLineDash([2,3]);
+    ctx.beginPath(); ctx.moveTo(cx+p0.x*sc,cy-p0.y*sc); ctx.lineTo(cx+pr.x*sc,cy-pr.y*sc); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(cx+pr.x*sc,cy-pr.y*sc,5,0,Math.PI*2);
+    ctx.fillStyle='#ffffffcc'; ctx.fill();
+    ctx.fillStyle='#ffffff88'; ctx.font='10px Space Mono,monospace'; ctx.textAlign='center';
+    ctx.fillText('r(t)',cx+pr.x*sc,cy-pr.y*sc-10);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  EIGEN TABLE
+// ══════════════════════════════════════════════════════════
+function updateEigenTable(res) {
+  const tbody=document.getElementById('eigen-tbody'); tbody.innerHTML='';
+  res.values.forEach((lv,i)=>{
+    const mag=Math.sqrt(lv.re*lv.re+lv.im*lv.im);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><span class="ev-label" style="background:${EV_COLORS[i]}22;color:${EV_COLORS[i]};border:1px solid ${EV_COLORS[i]}55;">λ${i+1}</span></td>
+      <td class="ev-re">${lv.re.toFixed(3)}</td>
+      <td class="ev-im">${lv.im>=0?'+':''}${lv.im.toFixed(3)}i</td>
+      <td style="color:#c8d8e8">${mag.toFixed(3)}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const wrap=document.getElementById('stability-wrap');
+  let cls,tag;
+  if(mode==='discrete'){
+    const mx=Math.max(...res.values.map(v=>Math.sqrt(v.re*v.re+v.im*v.im)));
+    if(mx>1.001){cls='unstable';tag='● |λ|>1  UNSTABLE';}
+    else if(mx<0.999){cls='stable';tag='● |λ|<1  STABLE (decays)';}
+    else{cls='marginal';tag='● |λ|=1  MARGINAL';}
+  } else {
+    const mx=Math.max(...res.values.map(v=>v.re));
+    if(mx>0.001){cls='unstable';tag='● Re(λ)>0  UNSTABLE';}
+    else if(mx<-0.001){cls='stable';tag='● Re(λ)<0  STABLE (decays)';}
+    else{cls='marginal';tag='● Re(λ)=0  MARGINAL';}
+  }
+  wrap.innerHTML=`<span class="stability-tag ${cls}">${tag}</span>`;
+
+  document.getElementById('evec-display').innerHTML=res.vectors.map((v,i)=>{
+    const comps=v.map((c,j)=>{
+      const h=Math.abs(c.im)>0.001;
+      return `<span style="color:${EV_COLORS[j]}">${h?`(${c.re.toFixed(2)}${c.im>=0?'+':''}${c.im.toFixed(2)}i)`:c.re.toFixed(2)}</span>`;
+    }).join(' ');
+    return `<div style="margin-bottom:4px;"><span style="color:${EV_COLORS[i]}">v${i+1}</span> = [${comps}]</div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  SIMULATION
+// ══════════════════════════════════════════════════════════
+function phi(x){ return useNL ? Math.tanh(x) : x; }
+
+function stepDiscrete(){
+  const Wr=Array(N).fill(0);
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++) Wr[i]+=W[i][j]*r[j];
+  r=r.map((ri,i)=>(1-lam)*ri+lam*phi(gain*Wr[i]));
+  r=r.map(x=>Math.max(-1e4,Math.min(1e4,x)));
+  simT+=1;
+  simHistory.push({t:simT,r:[...r]});
+  if(simHistory.length>HISTORY_LEN) simHistory.shift();
+}
+
+function derivCont(s){
+  return s.map((ri,i)=>{
+    let wr=0; for(let j=0;j<N;j++) wr+=W[i][j]*s[j];
+    return(-alpha*ri+gain*phi(wr))/tau;
+  });
+}
+
+function rk4(s,dt){
+  const k1=derivCont(s),k2=derivCont(s.map((x,i)=>x+k1[i]*dt/2));
+  const k3=derivCont(s.map((x,i)=>x+k2[i]*dt/2)),k4=derivCont(s.map((x,i)=>x+k3[i]*dt));
+  return s.map((x,i)=>x+(k1[i]+2*k2[i]+2*k3[i]+k4[i])*dt/6);
+}
+
+function stepContinuous(){
+  const dtSub=Math.min(DT,tau/4),nSub=Math.ceil(DT/dtSub);
+  for(let s=0;s<nSub;s++){r=rk4(r,DT/nSub);r=r.map(x=>Math.max(-1e4,Math.min(1e4,x)));}
+  simT=parseFloat((simT+DT).toFixed(4));
+  simHistory.push({t:simT,r:[...r]});
+  if(simHistory.length>HISTORY_LEN) simHistory.shift();
+}
+
+// ══════════════════════════════════════════════════════════
+//  DYNAMICS CANVAS
+// ══════════════════════════════════════════════════════════
+function drawDynamics(){
+  const canvas=document.getElementById('dynCanvas');
+  canvas.width=canvas.parentElement.clientWidth||280;
+  const ctx=canvas.getContext('2d'),W2=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W2,H);
+  if(simHistory.length<2) return;
+
+  let dMin=Infinity,dMax=-Infinity;
+  simHistory.forEach(s=>s.r.forEach(v=>{if(v<dMin)dMin=v;if(v>dMax)dMax=v;}));
+  const mg=Math.max(0.05,(dMax-dMin)*0.12),yMin=dMin-mg,yMax=dMax+mg,yRng=Math.max(yMax-yMin,0.01);
+  function toY(v){return H-((v-yMin)/yRng)*H;}
+
+  const gst=(yMax-yMin)<1?0.25:((yMax-yMin)<3?0.5:1.0);
+  for(let v=Math.ceil(yMin/gst)*gst;v<=yMax+1e-6;v+=gst){
+    const y=toY(v),z=Math.abs(v)<gst*0.01;
+    ctx.strokeStyle=z?'#2a4060':'#1e3050'; ctx.lineWidth=z?1.5:1;
+    ctx.setLineDash(z?[4,4]:[]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W2,y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#2a4060'; ctx.font='8px Space Mono,monospace'; ctx.textAlign='left';
+    ctx.fillText(v.toFixed(gst<1?2:1),2,y-2);
+  }
+
+  const tMin=simHistory[0].t,tMax=simHistory[simHistory.length-1].t;
+  const tRng=Math.max(tMax-tMin,mode==='discrete'?1:0.001);
+
+  for(let ni=0;ni<N;ni++){
+    ctx.strokeStyle=EV_COLORS[ni]; ctx.lineWidth=2; ctx.shadowColor=EV_COLORS[ni]; ctx.shadowBlur=4;
+    ctx.beginPath();
+    simHistory.forEach((s,k)=>{
+      const x=((s.t-tMin)/tRng)*W2,y=toY(s.r[ni]);
+      k===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke(); ctx.shadowBlur=0;
+  }
+
+  if(mode==='discrete'&&simHistory.length<=80){
+    simHistory.forEach(s=>{
+      const x=((s.t-tMin)/tRng)*W2;
+      for(let ni=0;ni<N;ni++){
+        ctx.beginPath(); ctx.arc(x,toY(s.r[ni]),2.5,0,Math.PI*2);
+        ctx.fillStyle=EV_COLORS[ni]; ctx.fill();
+      }
+    });
+  }
+
+  ['r₁','r₂','r₃'].forEach((lb,i)=>{
+    ctx.fillStyle=EV_COLORS[i]; ctx.font='10px Space Mono,monospace';
+    ctx.textAlign='left'; ctx.fillText(lb,8+i*32,14);
+  });
+
+  const badge=mode==='discrete'?'DISC':'CONT';
+  const bc=mode==='discrete'?'#00aaff44':'#00e5a044', bt=mode==='discrete'?'#00aaff':'#00e5a0';
+  ctx.fillStyle=bc; ctx.fillRect(W2-50,4,46,14);
+  ctx.fillStyle=bt; ctx.font='8px Space Mono,monospace';
+  ctx.textAlign='center'; ctx.fillText(badge,W2-27,14); ctx.textAlign='left';
+
+  ctx.fillStyle='#3a5070'; ctx.font='9px Space Mono,monospace'; ctx.textAlign='right';
+  ctx.fillText(mode==='discrete'?`t=${simT}`:`t=${simT.toFixed(1)}s`,W2-6,H-4);
+  ctx.textAlign='left';
+}
+
+// ══════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+//  Speed slider 1..40:
+//    1-10  → take 1 step every (11-speed) frames  (slow)
+//    11-40 → take (speed-8) steps per frame       (fast)
+// ══════════════════════════════════════════════════════════
+let frameCount=0;
+
+function doStep(){
+  if(mode==='discrete') stepDiscrete(); else stepContinuous();
+}
+
+function animate(){
+  if(!running) return;
+  if(simSpeed<=10){
+    if(frameCount%(11-simSpeed)===0) doStep();
+  } else {
+    const n=simSpeed-8;
+    for(let i=0;i<n;i++) doStep();
+  }
+  frameCount++;
+  drawDynamics(); drawNetwork(); drawEigenspace(computeEigen());
+  animId=requestAnimationFrame(animate);
+}
+
+function toggleRun(){
+  running=!running;
+  const btn=document.getElementById('run-btn');
+  if(running){btn.textContent='⏸ Pause';btn.classList.add('running');frameCount=0;animId=requestAnimationFrame(animate);}
+  else{btn.textContent='▶ Run';btn.classList.remove('running');if(animId)cancelAnimationFrame(animId);}
+}
+
+function resetSim(){
+  if(running)toggleRun(); r=[...r0]; simHistory=[]; simT=0;
+  drawDynamics(); drawNetwork(); drawEigenspace(computeEigen());
+}
+
+function setIC100(){
+  r0=[1,0,0]; r=[...r0]; simHistory=[]; simT=0;
+  document.getElementById('ic-display').textContent='[1.00, 0.00, 0.00]';
+  drawDynamics(); drawNetwork(); drawEigenspace(computeEigen());
+}
+
+function randomIC(){
+  r0=Array.from({length:N},()=>Math.random()); r=[...r0]; simHistory=[]; simT=0;
+  document.getElementById('ic-display').textContent='['+r0.map(v=>v.toFixed(2)).join(', ')+']';
+  drawDynamics(); drawNetwork(); drawEigenspace(computeEigen());
+}
+
+function computeEigen(){ return eigen3(effectiveW()); }
+
+function updateAll(){
+  updateCellUI(); const res=computeEigen();
+  updateEigenTable(res); drawEigenspace(res); drawNetwork(); drawDynamics();
+}
+
+// ══════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════
+function init(){
+  // Forward ring default (works perfectly for discrete mode)
+  W[0][2]=1; W[1][0]=1; W[2][1]=1;
+  buildAdjTable();
+
+  const ep=document.getElementById('eigen-panel');
+  const ec=document.getElementById('eigenCanvas');
+  ec.width=Math.max(260,ep.clientWidth*0.58-30); ec.height=220;
+  const dc=document.getElementById('dynCanvas');
+  dc.width=document.getElementById('dyn-panel').clientWidth-32; dc.height=160;
+
+  ec.addEventListener('mousedown',e=>{dragging=true;lastMX=e.clientX;lastMY=e.clientY;});
+  window.addEventListener('mouseup',()=>{dragging=false;});
+  window.addEventListener('mousemove',e=>{
+    if(!dragging)return;
+    eigenRotY+=(e.clientX-lastMX)*0.012; eigenRotX+=(e.clientY-lastMY)*0.012;
+    lastMX=e.clientX; lastMY=e.clientY; updateAll();
+  });
+
+  updateEquationLabel(); setIC100(); updateAll();
+}
+
+window.addEventListener('load',init);
+window.addEventListener('resize',()=>{
+  const ep=document.getElementById('eigen-panel');
+  document.getElementById('eigenCanvas').width=Math.max(260,ep.clientWidth*0.58-30);
+  document.getElementById('dynCanvas').width=document.getElementById('dyn-panel').clientWidth-32;
+  updateAll();
+});
+
+setInterval(()=>{if(!dragging&&!running){eigenRotY+=0.005;drawEigenspace(computeEigen());}},50);
+</script>
+</body>
+</html>
