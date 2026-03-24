@@ -18,7 +18,7 @@ Three rate-coded neurons, indexed $i \in \{1, 2, 3\}$, connected by a $3 \times 
 
 The **default connectivity** is a forward ring with self-excitation:
 
-$$W = \begin{pmatrix} 0 & 0 & +1 \\ +1 & 0 & 0 \\ 0 & +1 & 0 \end{pmatrix}$$
+$$W = \begin{pmatrix} 0 & 0 & 1 \\ 1 & 0 & 0 \\ 0 & 1 & 0 \end{pmatrix}$$
 
 This means N1 receives from N3, N2 from N1, N3 from N2 — activity rotates around the ring. The eigenvalues of this $W$ are $\{1,\, \omega,\, \omega^*\}$ where $\omega = e^{2\pi i/3}$, a complex conjugate pair with argument $\pm 120°$.
 
